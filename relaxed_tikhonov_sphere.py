@@ -906,7 +906,7 @@ def PMM_S2_S3(Noise, Data, lam, iter, tau, rho, circ, eps):
 
     sigma = 1/(2*4*tau)
 
-    data = np.zeros(iter, dtype=complex)
+    data = np.zeros(iter)
     datatime = np.zeros(iter, dtype=float)
 
     print('iteration \t| func-value \t| original-cost \t| spherical-error')
