@@ -383,7 +383,77 @@ def angle_S7(X):
             phi7 = np.append(phi7, np.arccos(g[i]/np.sqrt(g[i]**2 + h[i]**2)))
 
     return [phi1, phi2, phi3, phi4, phi5, phi6, phi7]
+
+def sample_hyperbolic_signal(d,n):
+
+    x = 2*np.random.randn(d,n)
+    t = np.sqrt(1 + np.sum(x**2,0))
+
+    data = np.zeros((d+1,n))
+    data[0:d,:] = x
+    data[d,:] = t
+
+    print('minkowsky inner-prod test : ', np.linalg.norm(1 + np.sum(data[0:d,:]**2,0) - data[d,:]**2))
+
+    return data
     
+def sample_smooth_hyperbolic_signal(d,n):
+
+    x = 2*np.random.randn(d,n)
+    
+    xx = np.linspace(0,20*n,n)
+
+    splx = []
+    
+    for i in range(d):
+        splx = np.append(splx, CubicSpline(xx, x[i,:]))
+
+    xxnew = np.linspace(0, 20*n, 20*n)
+
+    data = np.zeros((d+1,np.size(xxnew)))
+
+    for i in range(d):
+        data[i,:] = splx[i](xxnew)
+
+    t = np.sqrt(1 + np.sum(data**2,0))
+
+    data[d,:] = t
+
+    print('minkowsky inner-prod test : ', np.linalg.norm(1 + np.sum(data[0:d,:]**2,0) - data[d,:]**2))
+
+    return data
+
+def sample_smooth_hyperbolic_signal_h(d,n):
+
+    x = 1*np.random.randn(d,n)
+    
+    xx = np.linspace(0,20*n,n)
+
+    splx = []
+    
+    for i in range(d):
+        splx = np.append(splx, CubicSpline(xx, x[i,:]))
+
+    xxnew = np.linspace(0, 20*n, 20*n)
+
+    data = np.zeros((d+1,np.size(xxnew)))
+
+    for i in range(d):
+        data[i,:] = splx[i](xxnew)
+
+    data0 = data.copy()
+    if d == 1:
+        data[0,:] = np.sinh(data0[0,:])
+        data[1,:] = np.cosh(data0[0,:])
+    if d ==2 :
+        data[0,:] = np.sinh(6/4*data0[0,:])*np.sin(3/4*data0[1,:])
+        data[1,:] = np.sinh(6/4*data0[0,:])*np.cos(3/4*data0[1,:])
+        data[2,:] = np.cosh(6/4*data0[0,:])
+
+
+    print('minkowsky inner-prod test : ', np.linalg.norm(1 + np.sum(data[0:d,:]**2,0) - data[d,:]**2))
+
+    return data
 
 
 #############################################
@@ -582,6 +652,89 @@ def proj_B1(x):
                 x[:,i] = x[:,i]/np.sqrt(np.sum(x[:,i]**2))
             
         return x
+
+def opLHyper(x, v, f, ll):
+
+    d, N = np.shape(x)
+    l = d-1
+
+    L = np.zeros((d+4, d+4, N-1))
+
+    L[l+1,0:d,:] = x[:,0:N-1]
+    L[l+2,0:d,:] = x[:,0:N-1]
+    L[l+2,d-1,:] = -L[l+2,d-1,:]
+    L[l+3,0:d,:] = x[:,1:N]
+    L[l+4,0:d,:] = x[:,1:N]
+    L[l+4,d-1,:] = -L[l+4,d-1,:]
+
+    L[0:d,l+1,:] = x[:,0:N-1]
+    L[0:d,l+2,:] = x[:,0:N-1]
+    L[d-1,l+2,:] = -L[d-1,l+2,:]
+    L[0:d,l+3,:] = x[:,1:N]
+    L[0:d,l+4,:] = x[:,1:N]
+    L[d-1,l+4,:] = -L[d-1,l+4,:]
+
+    ####
+
+    L[d, d, :] = v[0:N-1]
+    L[d+1, d+1, :] = v[0:N-1]
+    L[d+2, d+2, :] = v[1:N]
+    L[d+3, d+3, :] = v[1:N]
+
+    ####
+
+    L[d+2, d,:] = f
+    L[d+3, d+1,:] = f
+    L[d, d+2,:] = f
+    L[d+1, d+3,:] = f
+
+    ####
+
+    L[d+2, d+1,:] = ll
+    L[d+3, d,:] = ll
+    L[d+1, d+2,:] = ll
+    L[d, d+3,:] = ll
+
+    return L
+
+def adjopLHyper(U):
+
+    r,r,M = np.shape(U)
+    #print(np.shape(U))
+
+    N = M + 1
+    d = r-4
+    #print(d, N)
+
+    x = np.zeros((d, N))
+    v = np.zeros(N)
+    f = np.zeros(M)
+    l = np.zeros(M)
+
+    x[:,0:N-1] += U[r-4,0:d,:] + U[r-3,0:d,:] + U[0:d,r-4,:] + U[0:d,r-3,:]
+    x[d-1,0:N-1] += U[r-4,d-1,:] - U[r-3,d-1,:] + U[d-1,r-4,:] - U[d-1,r-3,:]
+    x[:,1:N] += U[r-2,0:d,:] + U[r-1,0:d,:] + U[0:d,r-2,:] + U[0:d,r-1,:]
+    x[d-1,1:N] += U[r-2,d-1,:] - U[r-1,d-1,:] + U[d-1,r-2,:] - U[d-1,r-1,:]
+
+    v[0:N-1] = U[r-4,r-4,:] + U[r-3,r-3,:]
+    v[1:N] += U[r-2,r-2,:] + U[r-1,r-1,:]
+
+    f = U[r-2,r-4,:] + U[r-1,r-3,:] + U[r-4,r-2,:] + U[r-3,r-1,:]
+    l = U[r-1,r-4,:] + U[r-2,r-3,:] + U[r-3,r-2,:] + U[r-4,r-1,:]
+
+    return [x, v, f, l]
+
+def proxHyper(W):
+
+    r,r,M = np.shape(W)
+
+    WW = np.zeros((r,r,M))
+    for i in range(M):
+        D, R = np.linalg.eig(W[:,:,i])
+        DD = np.maximum(np.real(D), 0)
+        WW[:,:,i] = R@np.diag(DD)@R.T
+    return WW
+
 
 
 #############################################
@@ -1260,6 +1413,72 @@ def ADMM_TV_BOX(y, y0, mu, rho, iter):
 
         return [x, z]
 
+def ADMM_red_hyper(y, y_0, lam, rho, iter):
+
+    d, N = np.shape(y)
+
+    U = np.zeros((d+4,d+4,N-1))
+    Z = np.zeros((d+4,d+4,N-1))
+
+    x = np.zeros((d,N))
+    v = np.zeros(N)
+    l = np.zeros(N-1)
+    f = np.zeros(N-1)
+
+    E = np.zeros((d+4,d+4,N-1))
+    for i in range(d):
+        E[i,i,:] = np.ones(N-1)
+    E[d+1,d,:] = -np.ones(N-1)
+    E[d,d+1,:] = -np.ones(N-1)
+    E[d+3,d+2,:] = -np.ones(N-1)
+    E[d+2,d+3,:] = -np.ones(N-1)
+
+    x1 = np.random.randn(d,N)
+    i = 0 
+
+    print('iteration \t| func-value \t| mikwosky-error \t| error')
+    print('--------------------------------------------------------------------------')
+
+    #for i in range(iter):
+    while np.linalg.norm(x1 - x) > 1e-4 and np.linalg.norm(1 + np.sum(x[0:d-1,:]**2,0) - x[d-1,:]**2) > 1e-4 and i < iter:
+
+        adj_x, adj_v, adj_f, adj_l = adjopLHyper(U - Z)
+        #adj_xz, adj_vz, adj_fz, adj_lz = adjopL(Z)
+
+        #print(np.shape(adj_xu), np.shape(adj_vu), np.shape(adj_fu), np.shape(adj_lu))
+
+        x1 = x.copy()
+
+        x[:,0] = 1/4*(adj_x[:,0] + y[:,0]/rho)
+        x[:,1:N-1] = 1/8*(adj_x[:,1:N-1] + y[:,1:N-1]/rho)
+        x[:,N-1] = 1/4*(adj_x[:,N-1] + y[:,N-1]/rho)
+
+        f = 1/4*(adj_f + lam/rho)
+
+        v[0] = 1/2*(adj_v[0] - 1/2/rho - lam/2/rho)
+        v[1:N-1] = 1/4*(adj_v[1:N-1] - 1/2/rho - lam/rho)
+        v[N-1] = 1/2*(adj_v[N-1] - 1/2/rho - lam/2/rho)
+
+        l = 1/4*(adj_l)
+
+        ### --------------
+
+        R = opLHyper(x, v, f, l) + Z + E
+        #U = ADMMprox(opL(x, v, f, l), Z)
+        U = proxHyper(R.copy()) - E
+
+        ### --------------
+
+        Z = Z + opLHyper(x, v, f, l) - U
+        #Z = R.copy() - U
+
+        if np.mod(i,100) == 0:
+            print(i, '\t\t|', "%10.2e"% (np.sum(1/2*(np.sum(y**2,0) + np.sum(x**2,0) - 2*np.sum(x*y,0)) + lam/2*(np.sum(v[0:N-1]) + np.sum(v[1:N]) - 2*np.sum(f)))), '\t|', "%10.2e"% np.linalg.norm(1 + np.sum(x[0:d-1,:]**2,0) - x[d-1,:]**2), '\t\t|', "%10.2e"% np.linalg.norm(x1 - x))
+
+        i += 1
+        
+    return [x, v, f, l]
+
 #############################################
 #
 # plots
@@ -1552,21 +1771,74 @@ def plotTorus(Noise, Data, sol_x):
     x = (R + r*np.cos(u))*np.cos(v)
     y = (R + r*np.cos(u))*np.sin(v)
     z = r*np.sin(u)
-    ax.plot(x, y, z, color="g", alpha= 0.75)
+    ax.plot(x, y, z, color="blue", alpha= 0.75)
 
     u = np.angle(Noise[0,:] + 1j*Noise[1,:])
     v = np.angle(Noise[2,:] + 1j*Noise[3,:])
     x = (R + r*np.cos(u))*np.cos(v)
     y = (R + r*np.cos(u))*np.sin(v)
     z = r*np.sin(u)
-    ax.scatter(x, y, z, color="r", alpha= 0.25)
+    ax.scatter(x, y, z, color="k", alpha= 0.25)
 
     u = np.angle(sol_x[0,:] + 1j*sol_x[1,:])
     v = np.angle(sol_x[2,:] + 1j*sol_x[3,:])
     x = (R + r*np.cos(u))*np.cos(v)
     y = (R + r*np.cos(u))*np.sin(v)
     z = r*np.sin(u)
-    ax.plot(x, y, z, color="b", alpha= 0.75)
+    ax.plot(x, y, z, color="red", alpha= 0.75)
 
 
+def plot_hyper1(Noise, Data, sol_x):
 
+    fig = plt.figure(figsize=(15,3))
+    plt.plot(np.arcsinh(Noise[0,:]), linewidth=0.75, color='black')
+    #plt.plot(np.arccosh(noise_smooth_signal[1,:]), linewidth=0.75, color='black')
+    plt.plot(np.arcsinh(Data[0,:]), color='blue')
+    plt.plot(np.arcsinh(sol_x[0,:]), color='red')
+    for pos in ['right', 'top']:
+            plt.gca().spines[pos].set_visible(False)
+    #plt.savefig('1-hyperbolic_data_denoise_h_presentation_sig=0.6.pdf', dpi=400)
+
+def plot_hyper2(Noise, Data, sol_x):
+
+    from mpl_toolkits.mplot3d import Axes3D
+    from itertools import product, combinations
+
+
+    fig = plt.figure(figsize=(10,10))
+    ax = fig.add_subplot(projection = '3d')
+    ax.set_aspect("auto")
+
+    # draw torus
+    r = 1
+    R = 2
+    k = 3
+    u, v = np.mgrid[-2*k:2*k:40j, -2*k:2*k:20j]
+    x = u
+    y = v
+    z = np.sqrt(1 + x**2 + y**2) 
+    ax.plot_wireframe(x, y, z, color="grey", alpha= 0.4)
+
+    # draw signal 
+    ax.plot(Data[0,:], Data[1,:], Data[2,:], color="blue", alpha= 1)
+
+    # draw noise 
+    ax.scatter(Noise[0,:], Noise[1,:], Noise[2,:], color="k", alpha= 0.25)
+
+    # draw sol 
+    ax.plot(sol_x[0,:], sol_x[1,:], sol_x[2,:], color="r", alpha= 1)
+
+    # make the panes transparent
+    ax.xaxis.set_pane_color((1.0, 1.0, 1.0, 0.0))
+    ax.yaxis.set_pane_color((1.0, 1.0, 1.0, 0.0))
+    ax.zaxis.set_pane_color((1.0, 1.0, 1.0, 0.0))
+    # make the grid lines transparent
+    ax.xaxis._axinfo["grid"]['color'] =  (1,1,1,0)
+    ax.yaxis._axinfo["grid"]['color'] =  (1,1,1,0)
+    ax.zaxis._axinfo["grid"]['color'] =  (1,1,1,0)
+
+    #surf = ax.plot_surface(u, v, z, cmap=plt.cm.coolwarm,
+    #                   linewidth=0, antialiased=False)
+    ax.set_axis_off()
+    ax.view_init(50,30,0)
+    #plt.savefig('2-hyperbolic_h_denoising_sig_0.3000.pdf',dpi=400)

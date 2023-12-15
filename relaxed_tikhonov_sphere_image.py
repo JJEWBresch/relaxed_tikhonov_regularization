@@ -262,6 +262,40 @@ def sample_torus_vMF_image(d, n, kap):
     
     return [Noise, Data]
 
+def sample_smooth_hyperbolic_image(d,n):
+
+    dis = 0.1
+    kap = 1
+
+    x = np.linspace(1,n,n+1)
+    x = np.arange(1,n+2,1)
+
+    Vdata = np.random.randn(d,n+1,n+1)*kap
+
+    x1 = np.arange(1,n,dis)
+    x21, x22 = np.meshgrid(x1, x1, indexing='ij', sparse='True')
+
+    l = np.size(x1)
+
+    q = np.zeros((d,l,l))
+
+    for i in range(d):
+        fx = interpolate.RegularGridInterpolator((x, x), Vdata[i,:,:], method='cubic')
+        xx = fx((x21, x22))
+        if i == d-1:
+            scal = 1 
+        else:
+            scal = 0
+        q[i,:,:] = scal + xx
+    
+    data = np.zeros((d+1,l,l))
+    data[0:d,:,:] = q
+    data[d,:,:] = np.sqrt(1 + np.sum(data**2,0))
+
+    print('minkowsky inner-prod test : ', np.linalg.norm(1 + np.sum(data[0:d,:]**2,0) - data[d,:]**2))
+
+    return data
+
 
 #############################################
 #
@@ -755,6 +789,142 @@ def proj_B1(x):
                     x[:,i,j] = x[:,i,j]/norm[i,j]
             
         return x
+
+def opL_2DHyper(x, v, f1, ll1, f2, ll2):
+
+    d, N, N = np.shape(x)
+    l = d-1
+
+    L2 = np.zeros((d+4, d+4, N, N-1))
+
+    L2[l+1,0:d,:,:] = x[:,:,0:N-1]
+    L2[l+2,0:d,:,:] = x[:,:,0:N-1]
+    L2[l+2,d-1,:,:] = -L2[l+2,d-1,:,:]
+    L2[l+3,0:d,:,:] = x[:,:,1:N]
+    L2[l+4,0:d,:,:] = x[:,:,1:N]
+    L2[l+4,d-1,:,:] = -L2[l+4,d-1,:,:]
+
+    L2[0:d,l+1,:,:] = x[:,:,0:N-1]
+    L2[0:d,l+2,:,:] = x[:,:,0:N-1]
+    L2[d-1,l+2,:,:] = -L2[d-1,l+2,:,:]
+    L2[0:d,l+3,:,:] = x[:,:,1:N]
+    L2[0:d,l+4,:,:] = x[:,:,1:N]
+    L2[d-1,l+4,:,:] = -L2[d-1,l+4,:,:]
+
+    ####
+
+    L2[d, d, :,:] = v[:,0:N-1]
+    L2[d+1, d+1,:, :] = v[:,0:N-1]
+    L2[d+2, d+2, :,:] = v[:,1:N]
+    L2[d+3, d+3, :,:] = v[:,1:N]
+
+    ####
+
+    L2[d+2, d,:,:] = f2
+    L2[d+3, d+1,:,:] = f2
+    L2[d, d+2,:,:] = f2
+    L2[d+1, d+3,:,:] = f2
+
+    ####
+
+    L2[d+2, d+1,:,:] = ll2
+    L2[d+3, d,:,:] = ll2
+    L2[d+1, d+2,:,:] = ll2
+    L2[d, d+3,:,:] = ll2
+
+    ###
+    ###
+    ###
+
+    L1 = np.zeros((d+4, d+4, N-1, N))
+
+    L1[l+1,0:d,:,:] = x[:,0:N-1,:]
+    L1[l+2,0:d,:,:] = x[:,0:N-1,:]
+    L1[l+2,d-1,:,:] = -L1[l+2,d-1,:,:]
+    L1[l+3,0:d,:,:] = x[:,1:N,:]
+    L1[l+4,0:d,:,:] = x[:,1:N,:]
+    L1[l+4,d-1,:,:] = -L1[l+4,d-1,:,:]
+
+    L1[0:d,l+1,:,:] = x[:,0:N-1,:]
+    L1[0:d,l+2,:,:] = x[:,0:N-1,:]
+    L1[d-1,l+2,:,:] = -L1[d-1,l+2,:,:]
+    L1[0:d,l+3,:,:] = x[:,1:N,:]
+    L1[0:d,l+4,:,:] = x[:,1:N,:]
+    L1[d-1,l+4,:,:] = -L1[d-1,l+4,:,:]
+
+    ####
+
+    L1[d, d, :,:] = v[0:N-1,:]
+    L1[d+1, d+1, :,:] = v[0:N-1,:]
+    L1[d+2, d+2, :,:] = v[1:N,:]
+    L1[d+3, d+3, :,:] = v[1:N,:]
+
+    ####
+
+    L1[d+2, d,:,:] = f1
+    L1[d+3, d+1,:,:] = f1
+    L1[d, d+2,:,:] = f1
+    L1[d+1, d+3,:,:] = f1
+
+    ####
+
+    L1[d+2, d+1,:,:] = ll1
+    L1[d+3, d,:,:] = ll1
+    L1[d+1, d+2,:,:] = ll1
+    L1[d, d+3,:,:] = ll1
+
+    return [L1, L2]
+
+def adjopL_2DHyper(U1, U2):
+
+    r,r,M,N = np.shape(U1)
+    #print(np.shape(U))
+
+    N = M + 1
+    d = r-4
+    #print(d, N)
+
+    x = np.zeros((d, N, N))
+    v = np.zeros((N,N))
+    f1 = np.zeros((M,N))
+    l1 = np.zeros((M,N))
+    f2 = np.zeros((N,M))
+    l2 = np.zeros((N,M))
+
+    x[:,0:N-1,:] += U1[r-4,0:d,:] + U1[r-3,0:d,:] + U1[0:d,r-4,:] + U1[0:d,r-3,:]
+    x[d-1,0:N-1,:] += U1[r-4,d-1,:] - U1[r-3,d-1,:] + U1[d-1,r-4,:] - U1[d-1,r-3,:]
+    x[:,1:N,:] += U1[r-2,0:d,:] + U1[r-1,0:d,:] + U1[0:d,r-2,:] + U1[0:d,r-1,:]
+    x[d-1,1:N,:] += U1[r-2,d-1,:] - U1[r-1,d-1,:] + U1[d-1,r-2,:] - U1[d-1,r-1,:]
+
+    x[:,:,0:N-1] += U2[r-4,0:d,:,:] + U2[r-3,0:d,:,:] + U2[0:d,r-4,:,:] + U2[0:d,r-3,:,:]
+    x[d-1,:,0:N-1] += U2[r-4,d-1,:,:] - U2[r-3,d-1,:,:] + U2[d-1,r-4,:,:] - U2[d-1,r-3,:,:]
+    x[:,:,1:N] += U2[r-2,0:d,:,:] + U2[r-1,0:d,:,:] + U2[0:d,r-2,:,:] + U2[0:d,r-1,:,:]
+    x[d-1,:,1:N] += U2[r-2,d-1,:,:] - U2[r-1,d-1,:,:] + U2[d-1,r-2,:,:] - U2[d-1,r-1,:,:]
+
+    v[0:N-1,:] = U1[r-4,r-4,:,:] + U1[r-3,r-3,:,:]
+    v[1:N,:] += U1[r-2,r-2,:,:] + U1[r-1,r-1,:,:]
+    v[:,0:N-1] += U2[r-4,r-4,:,:] + U2[r-3,r-3,:,:]
+    v[:,1:N] += U2[r-2,r-2,:,:] + U2[r-1,r-1,:,:]
+
+    f1 = U1[r-2,r-4,:,:] + U1[r-1,r-3,:,:] + U1[r-4,r-2,:,:] + U1[r-3,r-1,:,:]
+    l1 = U1[r-1,r-4,:,:] + U1[r-2,r-3,:,:] + U1[r-3,r-2,:,:] + U1[r-4,r-1,:,:]
+
+    f2 = U2[r-2,r-4,:,:] + U2[r-1,r-3,:,:] + U2[r-4,r-2,:,:] + U2[r-3,r-1,:,:]
+    l2 = U2[r-1,r-4,:,:] + U2[r-2,r-3,:,:] + U2[r-3,r-2,:,:] + U2[r-4,r-1,:,:]
+
+    return [x, v, f1, l1, f2, l2]
+
+def prox_2DHyper(W):
+
+    r,r,M1,M2 = np.shape(W)
+
+    WW = np.zeros((r,r,M1,M2))
+    for i in range(M1):
+        for j in range(M2):
+            D, R = np.linalg.eig(W[:,:,i,j])
+            DD = np.maximum(np.real(D), 0)
+            WW[:,:,i,j] = R@np.diag(DD)@R.T
+    return WW
 
 
 #############################################
@@ -1577,6 +1747,100 @@ def ADMM_red_torus_2D(y, y_0, lam, rho, iter):
     
     return [x, l1, l2]
 
+def ADMM_red_hyper2D(y, y_0, lam, rho, iter):
+
+    d, N, N = np.shape(y)
+
+    U1 = np.zeros((d+4,d+4,N-1,N))
+    U2 = np.zeros((d+4,d+4,N,N-1))
+    Z1 = np.zeros((d+4,d+4,N-1,N))
+    Z2 = np.zeros((d+4,d+4,N,N-1))
+
+    x = np.zeros((d,N,N))
+    v = np.zeros((N,N))
+    l1 = np.zeros(N-1)
+    f1 = np.zeros(N-1)
+    l2 = np.zeros(N-1)
+    f2 = np.zeros(N-1)
+
+    E1 = np.zeros((d+4,d+4,N-1,N))
+    for i in range(d):
+        E1[i,i,:,:] = np.ones((N-1,N))
+    E1[d+1,d,:,:] = -np.ones((N-1,N))
+    E1[d,d+1,:,:] = -np.ones((N-1,N))
+    E1[d+3,d+2,:,:] = -np.ones((N-1,N))
+    E1[d+2,d+3,:,:] = -np.ones((N-1,N))
+
+    E2 = np.zeros((d+4,d+4,N,N-1))
+    for i in range(d):
+        E2[i,i,:,:] = np.ones((N,N-1))
+    E2[d+1,d,:,:] = -np.ones((N,N-1))
+    E2[d,d+1,:,:] = -np.ones((N,N-1))
+    E2[d+3,d+2,:,:] = -np.ones((N,N-1))
+    E2[d+2,d+3,:,:] = -np.ones((N,N-1))
+
+    x1 = np.random.randn(d,N,N)
+    i = 0 
+
+    print('iteration \t| func-value \t| mikwosky-error \t| error')
+    print('-------------------------------------------------------------------------')
+
+    #for i in range(iter):
+    while np.linalg.norm(x1 - x) > 1e-4 and np.linalg.norm(1 + np.sum(x[0:d-1,:,:]**2,0) - x[d-1,:,:]**2) > 1e-4 and i < iter:
+
+        adj_x, adj_v, adj_f1, adj_l1, adj_f2, adj_l2 = adjopL_2DHyper(U1 - Z1, U2 - Z2)
+
+        x1 = x.copy()
+
+        x[:,0,0] = 1/8*(adj_x[:,0,0] + y[:,0,0]/rho)
+        x[:,0,N-1] = 1/8*(adj_x[:,0,N-1] + y[:,0,N-1]/rho)
+        x[:,N-1,0] = 1/8*(adj_x[:,N-1,0] + y[:,N-1,0]/rho)
+        x[:,N-1,N-1] = 1/8*(adj_x[:,N-1,N-1] + y[:,N-1,N-1]/rho)
+
+        x[:,0,1:N-1] = 1/12*(adj_x[:,0,1:N-1] + y[:,0,1:N-1]/rho)
+        x[:,N-1,1:N-1] = 1/12*(adj_x[:,N-1,1:N-1] + y[:,N-1,1:N-1]/rho)
+        x[:,1:N-1,0] = 1/12*(adj_x[:,1:N-1,0] + y[:,1:N-1,0]/rho)
+        x[:,1:N-1,N-1] = 1/12*(adj_x[:,1:N-1,N-1] + y[:,1:N-1,N-1]/rho)
+
+        x[:,1:N-1,1:N-1] = 1/16*(adj_x[:,1:N-1,1:N-1] + y[:,1:N-1,1:N-1]/rho)
+
+        f1 = 1/4*(adj_f1 + lam/rho)
+        f2 = 1/4*(adj_f2 + lam/rho)
+
+        v[0,0] = 1/4*(adj_v[0,0] - 1/2/rho - lam/rho)
+        v[0,N-1] = 1/4*(adj_v[0,N-1] - 1/2/rho - lam/rho)
+        v[N-1,0] = 1/4*(adj_v[N-1,0] - 1/2/rho - lam/rho)
+        v[N-1,N-1] = 1/4*(adj_v[N-1,N-1] - 1/2/rho - lam/rho)
+        
+        v[0,1:N-1] = 1/6*(adj_v[0,1:N-1] - 1/2/rho - 3/2*lam/rho)
+        v[1:N-1,0] = 1/6*(adj_v[1:N-1,0] - 1/2/rho - 3/2*lam/rho)
+        v[N-1,1:N-1] = 1/6*(adj_v[N-1,1:N-1] - 1/2/rho - 3/2*lam/rho)
+        v[1:N-1,N-1] = 1/6*(adj_v[1:N-1,N-1] - 1/2/rho - 3/2*lam/rho)
+
+        v[1:N-1,1:N-1] = 1/8*(adj_v[1:N-1,1:N-1] - 1/2/rho - 2*lam/rho)
+
+        l1 = 1/4*(adj_l1)
+        l2 = 1/4*(adj_l2)
+
+        ### --------------
+
+        temp1, temp2 = opL_2DHyper(x, v, f1, l1, f2, l2)
+
+        U1 = prox_2DHyper(temp1.copy() + Z1 + E1) - E1
+        U2 = prox_2DHyper(temp2.copy() + Z2 + E2) - E2
+
+        ### --------------
+
+        Z1 += temp1 - U1
+        Z2 += temp2 - U2
+
+        if np.mod(i,100) == 0:
+            print(i, '\t\t|', "%10.2e"% (np.sum(1/2*(np.sum(y**2,0) + np.sum(x**2,0) - 2*np.sum(x*y,0)) + lam/2*(np.sum(v[0:N-1,:]) + np.sum(v[1:N,:]) - 2*np.sum(f1))) + lam/2*(np.sum(v[:,0:N-1]) + np.sum(v[:,1:N]) - 2*np.sum(f2))), '\t|', "%10.2e"% np.linalg.norm(1 + np.sum(x[0:d-1,:,:]**2,0) - x[d-1,:,:]**2), '\t\t|', "%10.2e"% np.linalg.norm(x1 - x))
+
+        i += 1
+        
+    return [x, v, f1, l1, f2, l2]
+
 #############################################
 #
 # plots
@@ -1784,6 +2048,10 @@ def draw_line(x, y, angle1, angle2):
     r = 1  # or whatever fits you
     plt.arrow(x, y, r*np.cos(angle1), r*np.sin(angle1), head_starts_at_zero=True, color=plt.get_cmap('twilight')(angle2))
 
+def draw_line_non_periodic(x, y, angle1, angle2):
+    r = 1  # or whatever fits you
+    plt.arrow(x, y, r*np.cos(angle1), r*np.sin(angle1), head_starts_at_zero=True, color=plt.get_cmap('YlGnBu')(angle2))
+
 def plotTorus(Noise, Data, sol_x):
     
     fig = plt.figure(figsize=(12,4), dpi=100)
@@ -1811,3 +2079,58 @@ def plotTorus(Noise, Data, sol_x):
 
     ax.axis('off')
     plt.tight_layout()
+
+def plot_hyper1(Noise, Data, sol_x):
+
+    fig = plt.figure(figsize=(15,5))
+
+    ax1 = fig.add_subplot(131)
+    a1 = ax1.imshow(np.arcsinh(Data[0,:,:]))
+    fig.colorbar(a1, ax = ax1, location='right', shrink=0.76)
+
+    ax2 = fig.add_subplot(132)
+    a2 = ax2.imshow(np.arcsinh(Noise[0,:,:]))
+    fig.colorbar(a2, ax = ax2, location='right', shrink=0.76)
+
+    ax3 = fig.add_subplot(133)
+    a3 = ax3.imshow(np.arcsinh(sol_x[0,:,:]))
+    fig.colorbar(a3, ax = ax3, location='right', shrink=0.76)
+    fig.tight_layout()
+    #fig.savefig('1-hyperboloid_denoising_sig=0.3.pdf', dpi=300)
+
+def plot_hyper2(Noise, Data, sol_x):
+
+    rNoise = np.arccosh(Noise[2,:,:])
+    rData = np.arccosh(Data[2,:,:])
+    rsol_x = np.arccosh(sol_x[2,:,:])
+
+    aNoise = np.arcsin(Noise[0,:,:]/np.sinh(rNoise))
+    aData = np.arcsin(Data[0,:,:]/np.sinh(rData))
+    asol_x = np.arcsin(sol_x[0,:,:]/np.sinh(rsol_x))
+    
+    fig = plt.figure(figsize=(12,4), dpi=100)
+    ax = fig.add_subplot(131,frameon=False)
+
+    for i in range(np.size(Data[0,:,0])):
+        for j in range(np.size(Data[0,0,:])):
+            draw_line_non_periodic(i, j, aData[i,j], rData[i,j])
+        
+    ax.axis('off')
+
+    ax = fig.add_subplot(132,frameon=False)
+
+    for i in range(np.size(Noise[0,:,0])):
+        for j in range(np.size(Noise[0,0,:])):
+            draw_line_non_periodic(i, j, aNoise[i,j], rNoise[i,j])
+
+    ax.axis('off')
+
+    ax = fig.add_subplot(133,frameon=False)
+
+    for i in range(np.size(sol_x[0,:,0])):
+        for j in range(np.size(sol_x[0,0,:])):
+            draw_line_non_periodic(i, j, asol_x[i,j], rsol_x[i,j])
+
+    ax.axis('off')
+    plt.tight_layout()
+    #fig.savefig('2-hyperboloid_denoising_image_sig_0.6.pdf',dpi=300)
