@@ -296,6 +296,38 @@ def sample_smooth_hyperbolic_image(d,n):
 
     return data
 
+def TangtialHyperNoise(x,sig):
+
+    d = np.size(x[:,0,0])-1
+    n = np.size(x[0,:,0])
+
+    mu = np.zeros(d+1)
+    Mu1 = np.zeros((d+1,n,n))
+    Mu2 = np.zeros((d+1,n,n))
+    Nu = np.ones((d+1,n,n))
+    mu[d] = 1
+    Mu1[0,:,:] = np.ones((n,n))
+    Mu2[1,:,:] = np.ones((n,n))
+    Nu[d,:,:] = -1*Nu[d,:,:]
+
+    Data = x.copy()
+    normData = np.sum(Data**2,0)
+
+    W1 = Mu1 - np.sum(Mu1*Data,0)*Nu*Data/normData
+
+    normW1 = np.sum(W1**2,0)
+    W2 = Mu2 - np.sum(Mu2*Data,0)*Nu*Data/normData - np.sum(Mu2*W1,0)/normW1*W1
+
+    LogNoise = sig*np.random.randn(n,n)*W1 + sig*np.random.randn(n,n)*W2
+
+    normLogNoise = np.sqrt(np.sum(LogNoise[0:d,:,:]**2,0)-LogNoise[d,:,:]**2)
+
+    Noise = np.cosh(normLogNoise)*Data + np.sinh(normLogNoise)*LogNoise/normLogNoise
+
+    print(np.linalg.norm(np.sum(Data[0:d,:,:]**2,0)-Data[d,:,:]**2+1))
+    print(np.linalg.norm(np.sum(Noise[0:d,:,:]**2,0)-Noise[d,:,:]**2+1))
+
+    return Noise
 
 #############################################
 #
@@ -2133,4 +2165,4 @@ def plot_hyper2(Noise, Data, sol_x):
 
     ax.axis('off')
     plt.tight_layout()
-    #fig.savefig('2-hyperboloid_denoising_image_sig_0.6.pdf',dpi=300)
+    fig.savefig('2-hyperboloid_denoising_image_coral_sig_0.1.pdf',dpi=300)
