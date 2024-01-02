@@ -1024,6 +1024,7 @@ def ADRA(y, gam, mu, iter):
 
     return x
 
+
 def ADMM_TV_BOX(y, y0, mu, rho, iter):
 
         r, d, d = np.shape(y)
@@ -1814,7 +1815,7 @@ def ADMM_red_hyper2D(y, y_0, lam, rho, iter):
     x1 = np.random.randn(d,N,N)
     i = 0 
 
-    print('iteration \t| func-value \t| mikwosky-error \t| error')
+    print('iteration \t| func-value \t| minkowsky-error \t| error')
     print('-------------------------------------------------------------------------')
 
     #for i in range(iter):
@@ -1871,6 +1872,101 @@ def ADMM_red_hyper2D(y, y_0, lam, rho, iter):
 
         i += 1
         
+    return [x, v, f1, l1, f2, l2]
+
+def ADMM_TV_red_hyper2D(y, y_0, mu, rho, iter):
+
+    d, N, N = np.shape(y)
+
+    U1 = np.zeros((d+4,d+4,N-1,N))
+    U2 = np.zeros((d+4,d+4,N,N-1))
+    Z1 = np.zeros((d+4,d+4,N-1,N))
+    Z2 = np.zeros((d+4,d+4,N,N-1))
+
+    x = np.zeros((d,N,N))
+    v = np.zeros((N,N))
+    l1 = np.zeros(N-1)
+    f1 = np.zeros(N-1)
+    l2 = np.zeros(N-1)
+    f2 = np.zeros(N-1)
+
+    E1 = np.zeros((d+4,d+4,N-1,N))
+    for i in range(d):
+        E1[i,i,:,:] = np.ones((N-1,N))
+    E1[d+1,d,:,:] = -np.ones((N-1,N))
+    E1[d,d+1,:,:] = -np.ones((N-1,N))
+    E1[d+3,d+2,:,:] = -np.ones((N-1,N))
+    E1[d+2,d+3,:,:] = -np.ones((N-1,N))
+
+    E2 = np.zeros((d+4,d+4,N,N-1))
+    for i in range(d):
+        E2[i,i,:,:] = np.ones((N,N-1))
+    E2[d+1,d,:,:] = -np.ones((N,N-1))
+    E2[d,d+1,:,:] = -np.ones((N,N-1))
+    E2[d+3,d+2,:,:] = -np.ones((N,N-1))
+    E2[d+2,d+3,:,:] = -np.ones((N,N-1))
+
+    Nu = 2*np.ones((N,N))
+    Nu[1:N-1,0] = 3
+    Nu[0,1:N-1] = 3
+    Nu[1:N-1,N-1] = 3
+    Nu[N-1,1:N-1] = 3
+    Nu[1:N-1,1:N-1] = 4
+
+    x1 = np.random.randn(d,N,N)
+    i = 0 
+
+    print('iteration \t| func-value \t| minkowsky-error \t| error')
+    print('-------------------------------------------------------------------------')
+
+    #for i in range(iter):
+    while np.linalg.norm(x1 - x) > 1e-4 and np.linalg.norm(1 + np.sum(x[0:d-1,:,:]**2,0) - x[d-1,:,:]**2)/np.size(x[d-1,:,:]) > 1e-7 and i < iter:
+
+        adj_x, adj_v, adj_f1, adj_l1, adj_f2, adj_l2 = adjopL_2DHyper(U1 - Z1, U2 - Z2)
+
+        x1 = x.copy()
+
+        for l in range(d):
+            x[l,:,:] = ADRA((adj_x[l,:,:] + y[l,:,:]/rho)/4, 1, mu/rho/4, 300)
+            x[l,:,:] = x[l,:,:]/Nu
+
+        f1 = 1/4*(adj_f1)
+        f2 = 1/4*(adj_f2)
+
+        v[0,0] = 1/4*(adj_v[0,0] - 1/2/rho)
+        v[0,N-1] = 1/4*(adj_v[0,N-1] - 1/2/rho)
+        v[N-1,0] = 1/4*(adj_v[N-1,0] - 1/2/rho)
+        v[N-1,N-1] = 1/4*(adj_v[N-1,N-1] - 1/2/rho)
+        
+        v[0,1:N-1] = 1/6*(adj_v[0,1:N-1] - 1/2/rho)
+        v[1:N-1,0] = 1/6*(adj_v[1:N-1,0] - 1/2/rho)
+        v[N-1,1:N-1] = 1/6*(adj_v[N-1,1:N-1] - 1/2/rho)
+        v[1:N-1,N-1] = 1/6*(adj_v[1:N-1,N-1] - 1/2/rho)
+
+        v[1:N-1,1:N-1] = 1/8*(adj_v[1:N-1,1:N-1] - 1/2/rho)
+
+        l1 = 1/4*(adj_l1)
+        l2 = 1/4*(adj_l2)
+
+        ### --------------
+
+        temp1, temp2 = opL_2DHyper(x, v, f1, l1, f2, l2)
+
+        U1 = prox_2DHyper(temp1.copy() + Z1 + E1) - E1
+        U2 = prox_2DHyper(temp2.copy() + Z2 + E2) - E2
+
+        ### --------------
+
+        Z1 += temp1 - U1
+        Z2 += temp2 - U2
+
+        if np.mod(i,100) == 0:
+            print(i, '\t\t|', "%10.2e"% (np.sum(1/2*(np.sum(y**2,0) + np.sum(x**2,0) - 2*np.sum(x*y,0))) + mu*np.sum(np.abs(x[:,:,0:N-1] - x[:,:,1:N])) + mu*np.sum(np.abs(x[:,0:N-1,:] - x[:,1:N,:]))), '\t|', "%10.2e"% (np.linalg.norm(1 + np.sum(x[0:d-1,:,:]**2,0) - x[d-1,:,:]**2)/np.size(x[d-1,:,:])), '\t\t|', "%10.2e"% np.linalg.norm(x1 - x))
+
+        i += 1
+        
+    print(i-1, '\t\t|', "%10.2e"% (np.sum(1/2*(np.sum(y**2,0) + np.sum(x**2,0) - 2*np.sum(x*y,0))) + mu*np.sum(np.abs(x[:,:,0:N-1] - x[:,:,1:N])) + mu*np.sum(np.abs(x[:,0:N-1,:] - x[:,1:N,:]))), '\t|', "%10.2e"% np.linalg.norm(1 + np.sum(x[0:d-1,:,:]**2,0) - x[d-1,:,:]**2), '\t\t|', "%10.2e"% np.linalg.norm(x1 - x))
+
     return [x, v, f1, l1, f2, l2]
 
 #############################################
@@ -2081,7 +2177,7 @@ def draw_line(x, y, angle1, angle2):
     plt.arrow(x, y, r*np.cos(angle1), r*np.sin(angle1), head_starts_at_zero=True, color=plt.get_cmap('twilight')(angle2))
 
 def draw_line_non_periodic(x, y, angle1, angle2):
-    r = 1  # or whatever fits you
+    r = 2.5  # or whatever fits you
     plt.arrow(x, y, r*np.cos(angle1), r*np.sin(angle1), head_starts_at_zero=True, color=plt.get_cmap('YlGnBu')(angle2))
 
 def plotTorus(Noise, Data, sol_x):
@@ -2162,6 +2258,45 @@ def plot_hyper2(Noise, Data, sol_x):
     for i in range(np.size(sol_x[0,:,0])):
         for j in range(np.size(sol_x[0,0,:])):
             draw_line_non_periodic(i, j, asol_x[i,j], rsol_x[i,j])
+
+    ax.axis('off')
+    plt.tight_layout()
+    fig.savefig('2-hyperboloid_denoising_image_coral_sig_0.1.pdf',dpi=300)
+
+def plot_hyper2_sep(Noise, Data, sol_x):
+
+    rNoise = np.arccosh(Noise[2,:,:])
+    rData = np.arccosh(Data[2,:,:])
+    rsol_x = np.arccosh(sol_x[2,:,:])
+
+    aNoise = np.arcsin(Noise[0,:,:]/np.sinh(rNoise))
+    aData = np.arcsin(Data[0,:,:]/np.sinh(rData))
+    asol_x = np.arcsin(sol_x[0,:,:]/np.sinh(rsol_x))
+    
+    fig = plt.figure(figsize=(12,4), dpi=100)
+    ax = fig.add_subplot(131,frameon=False)
+
+    sep = np.linspace(0,np.size(sol_x[0,:,0])-1,50)
+
+    for i in sep:
+        for j in sep:
+            draw_line_non_periodic(int(i), int(j), aData[int(i), int(j)], rData[int(i), int(j)])
+        
+    ax.axis('off')
+
+    ax = fig.add_subplot(132,frameon=False)
+
+    for i in sep:
+        for j in sep:
+            draw_line_non_periodic(int(i), int(j), aNoise[int(i), int(j)], rNoise[int(i), int(j)])
+
+    ax.axis('off')
+
+    ax = fig.add_subplot(133,frameon=False)
+
+    for i in sep:
+        for j in sep:
+            draw_line_non_periodic(int(i), int(j), asol_x[int(i), int(j)], rsol_x[int(i), int(j)])
 
     ax.axis('off')
     plt.tight_layout()
